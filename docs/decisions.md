@@ -2,21 +2,27 @@
 
 ---
 
-## ADR 001: Dependencia Exclusiva de la Biblioteca Estándar
+## ADR 001: Adopción de Jinja2 y PyYAML para Templating Dinámico
 
 - **Estado:** Aceptado.
-- **Contexto:** Las herramientas de scaffolding y CLI de propósito general requieren ejecutarse de manera inmediata en cualquier entorno con Python sin demoras de instalación de dependencias pesadas.
-- **Decisión:** Implementar la totalidad del motor utilizando únicamente `pathlib`, `re`, `argparse`, `sys` y `typing`.
-- **Justificación:** Portabilidad instantánea, cero vulnerabilidades por cadena de suministro y máxima velocidad de arranque.
+- **Contexto:** Las especificaciones de proyectos en Markdown a menudo necesitan parametrizar nombres de paquetes, versiones, banderas de configuración condicionales (ej. Docker, tests, bases de datos) y opciones de entorno.
+- **Decisión:** Integrar `jinja2` para renderizar tanto rutas relativas como contenidos de archivo, y `pyyaml` para extraer variables declaradas en frontmatter o bloques de configuración.
+- **Justificación:**
+  - Sintaxis declarativa estándar de la industria (`{{ var }}`, `{% if ... %}`).
+  - Permite parametrización flexible desde el propio Markdown y desde argumentos de CLI (`--var clave=valor`).
+  - Permite condicionales tanto en el árbol de carpetas como dentro del código fuente.
 
 ---
 
-## ADR 002: Separación Estricta entre Parseo Sintáctico y Construcción Física
+## ADR 002: Jerarquía de Precedencia de Variables
 
 - **Estado:** Aceptado.
-- **Contexto:** El parseo de especificaciones Markdown no debe acoplarse con la lógica de escritura en disco para permitir pruebas unitarias sin efectos secundarios e implementar con facilidad el modo `--dry-run`.
-- **Decisión:** `ScaffoldParser` opera exclusivamente sobre cadenas de texto retornando estructuras `TreeEntry` y diccionarios en memoria. `ScaffoldBuilder` consume estas estructuras y aplica las operaciones en disco.
-- **Justificación:** Alta testeabilidad, aislamiento de fallos y claridad de responsabilidades.
+- **Contexto:** Las variables pueden definirse en múltiples capas (YAML frontmatter inicial, bloques ```yaml en el cuerpo del documento, y parámetros de CLI).
+- **Decisión:** Establecer el siguiente orden de precedencia (de menor a mayor):
+  1. Frontmatter YAML inicial.
+  2. Bloques ```yaml embebidos.
+  3. Banderas `--var` pasadas por línea de comandos (tienen máxima prioridad).
+- **Justificación:** Permite que una especificación Markdown tenga valores predeterminados sensatos, pero que el usuario pueda anularlos dinámicamente en el momento de la ejecución sin tener que editar el archivo Markdown.
 
 ---
 

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md-scaffold"
-version = "1.0.0"
-description = "Motor de scaffolding local en Python que genera estructuras de proyectos a partir de especificaciones Markdown."
+version = "1.1.0"
+description = "Motor de scaffolding local en Python que genera estructuras de proyectos a partir de especificaciones Markdown con renderizado Jinja2."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -17,6 +17,15 @@ classifiers = [
     "Operating System :: OS Independent",
     "Environment :: Console",
     "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "jinja2>=3.1.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
 ]
 
 [project.scripts]

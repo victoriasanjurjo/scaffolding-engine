@@ -1,2 +1,6 @@
-# Dependencias para desarrollo y ejecución de pruebas
+# Dependencias del motor de scaffolding
+jinja2>=3.1.0
+pyyaml>=6.0
+
+# Dependencias para desarrollo y pruebas
 pytest>=8.0.0

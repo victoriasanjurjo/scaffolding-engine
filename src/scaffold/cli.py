@@ -1,7 +1,8 @@
 """Interfaz de Línea de Comandos (CLI) para md-scaffold.
 
-Procesa argumentos de consola, orquesta el parseo de Markdown y ejecuta
-el constructor físico informando el estado y métricas de manera clara y profesional.
+Procesa argumentos de consola, variables globales (--var clave=valor),
+orquesta el parseo y renderizado Jinja2 de Markdown y ejecuta
+el constructor físico informando el estado y métricas de manera clara.
 """
 
 import argparse
@@ -11,13 +12,14 @@ import sys
 from src.scaffold import __version__
 from src.scaffold.builder import ScaffoldBuilder, ScaffoldReport
 from src.scaffold.parser import ScaffoldParser
+from src.scaffold.templating import parse_cli_vars
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
     """Configura las opciones y comandos del CLI."""
     parser = argparse.ArgumentParser(
         prog="scaffold",
-        description="Generador local de estructuras de proyectos a partir de especificaciones Markdown.",
+        description="Generador local de estructuras de proyectos a partir de especificaciones Markdown con plantillas Jinja2.",
     )
     parser.add_argument(
         "markdown_file",
@@ -49,6 +51,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Si el árbol tiene una carpeta raíz englobadora (ej. mi-proyecto/), la descarta y crea el contenido directamente en el destino.",
     )
     parser.add_argument(
+        "--var",
+        "-V",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Define variables para renderizado Jinja2 (ej. --var project_name=mi_app --var use_docker=true). Puede repetirse.",
+    )
+    parser.add_argument(
         "-v",
         "--version",
         action="version",
@@ -58,11 +67,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def print_report(report: ScaffoldReport, target_path: Path) -> None:
+def print_report(report: ScaffoldReport, target_path: Path, context: dict | None = None) -> None:
     """Imprime el resumen de operaciones ejecutadas en la terminal."""
     mode_tag = "[DRY-RUN] " if report.is_dry_run else ""
 
     print(f"\n{mode_tag}Destino: {target_path}")
+    if context:
+        vars_str = ", ".join(f"{k}={v}" for k, v in context.items())
+        print(f"{mode_tag}Variables Jinja2: {vars_str}")
     print("-" * 60)
 
     for d in report.dirs_created:
@@ -90,7 +102,7 @@ def print_report(report: ScaffoldReport, target_path: Path) -> None:
 
 
 def run_scaffold(args: argparse.Namespace) -> int:
-    """Función central de ejecución del proceso de scaffolding."""
+    """Función central de ejecución del proceso de scaffolding con renderizado Jinja2."""
     md_path = Path(args.markdown_file)
 
     if not md_path.exists():
@@ -113,9 +125,16 @@ def run_scaffold(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Error: Permiso denegado al leer: {md_path}\n")
         return 1
 
-    # 1. Parseo sintáctico
-    parser = ScaffoldParser(content)
-    tree_entries, file_contents = parser.parse_all(strip_root=args.strip_root)
+    # 1. Parsear variables pasadas por CLI
+    cli_vars = parse_cli_vars(args.var)
+
+    # 2. Parseo sintáctico y resolución de plantillas Jinja2
+    try:
+        parser = ScaffoldParser(content, extra_context=cli_vars)
+        tree_entries, file_contents = parser.parse_all(strip_root=args.strip_root)
+    except Exception as tmpl_err:
+        sys.stderr.write(f"Error al procesar plantilla Jinja2: {tmpl_err}\n")
+        return 1
 
     if not tree_entries and not file_contents:
         sys.stderr.write(
@@ -123,7 +142,7 @@ def run_scaffold(args: argparse.Namespace) -> int:
         )
         return 0
 
-    # 2. Construcción física
+    # 3. Construcción física
     target_dir = Path(args.target).resolve()
     builder = ScaffoldBuilder(target_dir=target_dir)
 
@@ -144,7 +163,7 @@ def run_scaffold(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Error Inesperado: {ex}\n")
         return 1
 
-    print_report(report, target_dir)
+    print_report(report, target_dir, context=parser.context)
     return 0
 
 

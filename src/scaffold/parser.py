@@ -1,12 +1,15 @@
-"""Módulo de parseo sintáctico para especificaciones Markdown.
+"""Módulo de parseo sintáctico para especificaciones Markdown con soporte Jinja2.
 
-Extrae jerarquías de directorios a partir de diagramas de árbol ASCII y mapea
-el contenido exacto de los archivos definidos en bloques de código cercados.
+Extrae jerarquías de directorios a partir de diagramas de árbol ASCII, mapea
+variables globales (frontmatter y bloques YAML) y resuelve plantillas Jinja2
+tanto en rutas como en contenidos de archivos.
 """
 
 from dataclasses import dataclass
 import re
-from typing import Optional
+from typing import Any, Optional
+
+from src.scaffold.templating import ScaffoldTemplateEngine
 
 
 @dataclass(frozen=True)
@@ -20,9 +23,16 @@ class TreeEntry:
 class ScaffoldParser:
     """Analizador léxico y sintáctico de especificaciones Markdown para scaffolding."""
 
-    def __init__(self, content: str):
+    def __init__(self, content: str, extra_context: dict[str, Any] | None = None):
+        # 1. Extraer variables YAML (frontmatter inicial o bloques ```yaml)
+        extracted_vars, cleaned_content = ScaffoldTemplateEngine.extract_yaml_context(content)
+
+        # 2. Combinar contextos (las variables CLI / extra tienen precedencia)
+        self.context: dict[str, Any] = {**extracted_vars, **(extra_context or {})}
+        self.template_engine = ScaffoldTemplateEngine(self.context)
+
         # Normalizar saltos de línea a formato Unix (\n) para consistencia en regex
-        self.raw_content: str = content.replace("\r\n", "\n")
+        self.raw_content: str = cleaned_content.replace("\r\n", "\n")
 
     def extract_tree_blocks(self) -> list[str]:
         """Localiza y extrae bloques de código etiquetados como tree, text, ascii o sin etiqueta."""
@@ -59,8 +69,7 @@ class ScaffoldParser:
                 continue
 
             # 2. Localizar el nombre del nodo eliminando conectores de árbol
-            # Coincide con caracteres alfanuméricos, guiones, puntos y barra final opcional
-            match = re.search(r"([a-zA-Z0-9_\-\.\/]+/?)$", clean_line)
+            match = re.search(r"([a-zA-Z0-9_\-\.\/\{\}\s\%\<\>\:\;]+/?)$", clean_line)
             if not match:
                 continue
 
@@ -145,13 +154,21 @@ class ScaffoldParser:
         return file_map
 
     def parse_all(self, strip_root: bool = False) -> tuple[list[TreeEntry], dict[str, str]]:
-        """Ejecuta el parseo integral del árbol de directorios y contenidos de archivos."""
+        """Ejecuta el parseo integral resolviendo plantillas Jinja2 en árbol, rutas y contenidos."""
         tree_blocks = self.extract_tree_blocks()
         all_entries: list[TreeEntry] = []
 
         for block in tree_blocks:
-            entries = self.parse_tree_lines(block, strip_root=strip_root)
+            # 1. Renderizar el bloque de árbol con Jinja2 (permite evaluar condicionales {% if %} a nivel de árbol)
+            rendered_block = self.template_engine.render_string(block)
+            entries = self.parse_tree_lines(rendered_block, strip_root=strip_root)
             all_entries.extend(entries)
 
-        file_contents = self.parse_file_contents()
-        return all_entries, file_contents
+        # 2. Renderizar cualquier etiqueta restante en las rutas del árbol
+        all_entries = self.template_engine.render_tree_entries(all_entries)
+
+        # 3. Extraer y renderizar rutas y contenidos de archivos con Jinja2
+        raw_file_contents = self.parse_file_contents()
+        rendered_contents = self.template_engine.render_file_contents(raw_file_contents)
+
+        return all_entries, rendered_contents
